@@ -1,0 +1,158 @@
+﻿CREATE TRIGGER [dbo].[SALE_EVENT_UPDATER] ON [dbo].[Terminals]
+for INSERT
+AS
+
+Declare @ID as bigint
+Declare @Iserial as varchar(255)
+Declare @Iinvoiceid as bigint
+Declare @Remove as bit
+
+Declare @Iwarehouseid as bigint
+Declare @Icustomerid as bigint
+Declare @Iuserid as bigint
+
+Declare @bserial as varchar(255) = ''
+Declare @bwidth as integer
+Declare @bheight as integer
+Declare @bm2 as float
+Declare @bcount as integer
+Declare @bquantityInside as integer
+Declare @bweight as integer
+Declare @bstatus as tinyint
+Declare @bwarehouseid as bigint -->
+Declare @binvoiceid as bigint -->
+Declare @bproductid as bigint
+Declare @bcustomerid as bigint
+
+
+
+Declare @workInfo as varchar(255)='BAZADA XATO'
+Declare @workStatus as smallint=0
+--ie:
+--0-> start position
+--7-> selled
+--5-> deleted
+--100-> notfoundserial 
+--200-> otherwarehouse 
+--300-> moved to other warehouse
+--400-> selled to other fish
+--500-> not selled
+
+Select @Iinvoiceid = I.InvoiceId,
+       @Iserial = I.Serial,
+       @ID=Id,
+       @Remove=I.Remove
+From inserted I
+
+
+if not exists(select  *  from Balances where Serial <= @Iserial and Serial >= @Iserial )
+	begin
+		set @workInfo= 'BARKOD TOPILMADI!!!'
+		set @workStatus = 100
+	end
+else
+	begin
+		-- here we get info about Invoice
+		select @Iwarehouseid = WarehouseId,
+			   @Icustomerid = Customerid,
+			   @Iuserid = UserId
+		from Invoices where Id=@Iinvoiceid
+	
+		if not exists(select  *  from Balances where Serial=@Iserial and Warehouseid=@Iwarehouseid)
+			begin
+				set @workInfo='BARKOD BOSHQA SKLADGA TURIBDI!!!'
+				set @workStatus = 200
+			end
+		else
+			begin
+				--balansdan shu serialni oloyabmiz
+				Select @bserial=Serial,
+					   @bwidth=Width,
+					   @bheight=Height,
+					   @bm2=M2,
+					   @bcount=Count,
+					   @bquantityInside=QuantityInside,
+					   @bweight=Weight,
+					   @bstatus=Status,
+					   @bwarehouseid=WarehouseId,
+					   @bproductid=ProductId,
+					   @binvoiceid=InvoiceId
+				From Balances where Serial=@Iserial and Warehouseid=@Iwarehouseid
+				
+				if(@bstatus = 3)
+					begin
+						set @workInfo='BOSHQA SKLADGA O"TKAZILGAN!!!'
+						set @workStatus = 300
+					end
+				
+				if(@workStatus = 0)
+					begin
+						if(@Remove = 0)
+							begin
+								if(@bstatus = 4)
+									begin
+										set @workInfo='BARKOD SOTILGAN!!!'
+										set @workStatus = 400
+									end
+								else
+									begin
+										set @workInfo='SOTILDI!!!'
+										set @workStatus = 7
+									end
+							end
+						if(@Remove = 1)
+							begin
+								set @workInfo='O"CHIRILDI!!!'
+								set @workStatus = 5
+								if(@binvoiceid != @Iinvoiceid)
+									begin
+										set @workInfo='BOSHQA NAKLADNOYA SOTILGAN!!!'
+										set @workStatus = 400
+									end
+								if(@bstatus != 4)
+									begin
+										set @workInfo='BARKOD SOTILMAGAN!!!'
+										set @workStatus = 500
+									end	
+							end
+					end
+			end
+	end
+	
+if(@workStatus = 7 and @Remove = 0) --UPDATE FOR SELLING OPERATION
+	begin
+			
+		update dbo.Balances
+		set OldStatus=Status, Status = 4, InvoiceId = @Iinvoiceid
+		where Serial = @Iserial;
+		
+		insert into dbo.SaleEvents (Serial ,Width ,Height ,M2 ,Count ,QuantityInside ,Weight ,EventType ,Date ,Modified ,Notes ,Description ,ProductId ,InvoiceId ,CustomerId ,UserId )
+							values (@bserial, @bwidth, @bheight, @bm2, @bcount, @bquantityInside, @bweight, 4, GETDATE(), GETDATE(), '', '', @bproductid, @Iinvoiceid, @ICustomerid, @Iuserid );
+							
+		insert into dbo.Events ( Serial, Width, Height, M2, Count, QuantityInside, Weight, EventType, Date, Modified, Description, Notes, WarehouseId, CustomerId, ProductId, UserId, InvoiceId )
+							values (@bserial, @bwidth, @bheight, @bm2, @bcount, @bquantityInside, @bweight, 4, GETDATE(), GETDATE(), '', '', @Iwarehouseid, @ICustomerid, @bproductid, @Iuserid, @Iinvoiceid);
+							
+	end
+	
+if(@workStatus = 5 and @Remove = 1 ) --UPDATE FOR REMOVE OPERATION
+	begin	
+		update dbo.Balances
+		set Status = OldStatus, InvoiceId = null
+		where Serial = @Iserial;
+		
+		--delete from dbo.Events where Serial=@bserial and EventType=4
+		delete from dbo.SaleEvents where Serial=@bserial
+		
+		--insert into dbo.SaleEvents (Serial ,Width ,Height ,M2 ,Count ,QuantityInside ,Weight ,EventType ,Date ,Modified ,Notes ,Description ,ProductId ,InvoiceId ,CustomerId ,UserId )
+		--					values (@bserial, @bwidth, @bheight, @bm2, @bcount, @bquantityInside, @bweight, 4, GETDATE(), GETDATE(), '', '', @bproductid, @Iinvoiceid, @ICustomerid, 1 );
+							
+		insert into dbo.Events ( Serial, Width, Height, M2, Count, QuantityInside, Weight, EventType, Date, Modified, Description, Notes, WarehouseId, CustomerId, ProductId, UserId, InvoiceId )
+							values (@bserial, @bwidth, @bheight, @bm2, @bcount, @bquantityInside, @bweight, 5, GETDATE(), GETDATE(), '', '', @Iwarehouseid, @ICustomerid, @bproductid, @Iuserid, @Iinvoiceid);
+							
+	end
+	
+	
+update Terminals
+set WorkInfo=@workInfo, WorkStatus=@workStatus, Created=GETDATE(), WarehouseId=@Iwarehouseid, InvoiceId=@Iinvoiceid, CustomerId=@Icustomerid
+where Serial=@Iserial and Id=@ID
+;

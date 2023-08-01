@@ -1,0 +1,41 @@
+﻿SELECT 
+	q.Name as Quality,
+	c.Name as Color,
+	SUM(s.Count) as Piece,
+	SUM(s.QuantityInside) as InPiece,
+	SUM(M2) as M2
+FROM SKLAD.dbo.SaleEvents s
+inner join Products p on p.Id = s.ProductId
+inner JOIN Qualities q on q.Id = p.QualityId
+inner JOIN Designs d on d.Id = p.DesignId  
+inner JOIN Colors c on c.Id = p.ColorId  
+where InvoiceId = 2
+GROUP BY q.Name,c.Name
+ORDER BY c.Name ASC 
+
+
+
+select 
+      hr_serialno
+      ,hr_unitmsq
+      ,hr_ccount
+      ,hr_cwidth
+      ,hr_clenght
+      ,hr_csize1
+      ,hr_cbirimmsq
+      ,qty_desc
+      ,rnk_desc
+      ,des_desc
+  from [cps_ozb].[dbo].[cw_000_hareket]
+  inner join cps_ozb.[dbo].[cw_000_items] 
+  on hr_itemref=car_referans
+  inner join cps_ozb.dbo.cw_000_quality
+  on car_quality = qty_referans
+  inner join cps_ozb.dbo.cw_000_color
+  on car_color = rnk_referans
+  inner join cps_ozb.dbo.cw_000_design
+  on car_design = des_referans
+  
+  where hr_sevkemri = '1529'
+  order by qty_desc, rnk_desc, hr_cwidth, hr_clenght asc
+
